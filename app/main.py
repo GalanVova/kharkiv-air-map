@@ -65,8 +65,7 @@ async def refresh() -> None:
     async with POLL_LOCK:
         now = datetime.now(timezone.utc)
         actions, status = await poll_all_sources()
-        # Chronological application is important: a later 'all clear' should remove
-        # older markers from that source, while a newer threat remains visible.
+
         def action_time(item: dict[str, Any]) -> datetime:
             if item.get("action") == "clear":
                 return item["published_at"]
@@ -83,15 +82,15 @@ async def refresh() -> None:
         _prune(now)
         SOURCE_STATUS = status
         LAST_POLL = now
+        print("SOURCE_STATUS", status, "ACTIVE_EVENTS", len(EVENTS), flush=True)
 
 
 async def poll_loop() -> None:
     while True:
         try:
             await refresh()
-        except Exception:
-            # Keep service alive; source-level errors are surfaced via /api/status.
-            pass
+        except Exception as exc:
+            print("POLL_ERROR", type(exc).__name__, str(exc), flush=True)
         await asyncio.sleep(POLL_SECONDS)
 
 
@@ -109,7 +108,7 @@ async def lifespan(_: FastAPI):
             pass
 
 
-app = FastAPI(title="Kharkiv Air Map", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Kharkiv Air Map", version="1.0.1", lifespan=lifespan)
 
 
 @app.get("/api/events")
@@ -117,14 +116,8 @@ async def events() -> JSONResponse:
     now = datetime.now(timezone.utc)
     _prune(now)
     ordered = sorted(EVENTS.values(), key=lambda x: x["published_at"], reverse=True)
-    return JSONResponse(
-        {
-            "generated_at": now.isoformat(),
-            "ttl_minutes": EVENT_TTL_MINUTES,
-            "events": ordered,
-        },
-        headers={"Cache-Control": "no-store"},
-    )
+    return JSONResponse({"generated_at": now.isoformat(), "ttl_minutes": EVENT_TTL_MINUTES, "events": ordered},
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/status")
@@ -135,10 +128,7 @@ async def status() -> dict[str, Any]:
         "poll_seconds": POLL_SECONDS,
         "event_ttl_minutes": EVENT_TTL_MINUTES,
         "source_status": SOURCE_STATUS,
-        "sources": [
-            {"id": s["id"], "name": s["name"], "url": f"https://t.me/{s['channel']}"}
-            for s in TELEGRAM_SOURCES
-        ],
+        "sources": [{"id": s["id"], "name": s["name"], "url": f"https://t.me/{s['channel']}"} for s in TELEGRAM_SOURCES],
         "alerts_in_ua_enabled": bool(os.getenv("ALERTS_API_TOKEN", "").strip()),
     }
 
