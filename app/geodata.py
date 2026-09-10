@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
+
 # Approximate public map coordinates. These are settlement/neighbourhood centroids,
 # not sensor positions and not inferred target coordinates.
 LOCATIONS: dict[str, tuple[float, float, str]] = {
     "харків": (49.9935, 36.2304, "Харків"),
     "харьков": (49.9935, 36.2304, "Харків"),
-    "центр": (49.9930, 36.2320, "Центр Харкова"),
     "салтівка": (50.0142, 36.3369, "Салтівка"),
     "салтовка": (50.0142, 36.3369, "Салтівка"),
     "олексіївка": (50.0465, 36.2050, "Олексіївка"),
@@ -51,7 +52,6 @@ LOCATIONS: dict[str, tuple[float, float, str]] = {
     "мерефа": (49.8182, 36.0560, "Мерефа"),
     "безлюдівка": (49.8700, 36.2717, "Безлюдівка"),
     "безлюдовка": (49.8700, 36.2717, "Безлюдівка"),
-    "чугїв": (49.8356, 36.6860, "Чугуїв"),
     "чугуїв": (49.8356, 36.6860, "Чугуїв"),
     "чугуев": (49.8356, 36.6860, "Чугуїв"),
     "балаклія": (49.4658, 36.8596, "Балаклія"),
@@ -69,6 +69,8 @@ LOCATIONS: dict[str, tuple[float, float, str]] = {
     "змиев": (49.6877, 36.3552, "Зміїв"),
     "лозова": (48.8890, 36.3176, "Лозова"),
     "лозовая": (48.8890, 36.3176, "Лозова"),
+    "барвінкове": (48.9079, 37.0205, "Барвінкове"),
+    "барвенково": (48.9079, 37.0205, "Барвінкове"),
     "берестин": (49.3812, 35.4407, "Берестин"),
     "красноград": (49.3812, 35.4407, "Берестин"),
     "нова водолага": (49.7192, 35.8658, "Нова Водолага"),
@@ -97,14 +99,32 @@ LOCATIONS: dict[str, tuple[float, float, str]] = {
     "веселое": (50.1590, 36.5250, "Веселе"),
 }
 
+# Generic words are dangerous as aliases. "центр" matched "торговельного центру" before.
+# We handle the city centre only through explicit phrases below.
+CENTER_PATTERNS = (
+    r"\bцентр\s+харкова\b",
+    r"\bцентр\s+харькова\b",
+    r"\bв\s+центре\s+харькова\b",
+    r"\bу\s+центрі\s+харкова\b",
+)
+
+
+def _contains_alias(low: str, alias: str) -> bool:
+    # Unicode-aware boundaries; prevents substring matches inside unrelated words.
+    return re.search(rf"(?<![\w’']){re.escape(alias)}(?![\w’'])", low) is not None
+
 
 def find_locations(text: str) -> list[dict]:
     low = text.lower().replace("ё", "е")
     matches: list[dict] = []
     used: set[str] = set()
-    # Longer aliases first so a settlement is not shadowed by a shorter token.
+
+    if any(re.search(p, low) for p in CENTER_PATTERNS):
+        matches.append({"label": "Центр Харкова", "lat": 49.9930, "lon": 36.2320, "alias": "центр харкова"})
+        used.add("Центр Харкова")
+
     for alias, (lat, lon, label) in sorted(LOCATIONS.items(), key=lambda x: len(x[0]), reverse=True):
-        if alias in low and label not in used:
+        if _contains_alias(low, alias) and label not in used:
             matches.append({"label": label, "lat": lat, "lon": lon, "alias": alias})
             used.add(label)
     return matches
