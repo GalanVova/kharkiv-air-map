@@ -38,9 +38,6 @@ NOISE_PATTERNS = (
     "підтримати", "поддержать", "розіграш", "розыгрыш",
 )
 
-# Common grammatical forms used by monitoring channels.  The geocoder keeps
-# canonical settlement aliases, while this lightweight normalizer lets phrases
-# such as "на Лозовую" resolve to the public centroid for "Лозовая/Лозова".
 PLACE_FORMS = {
     "лозовую": "лозовая",
     "лозовой": "лозовая",
@@ -56,7 +53,6 @@ PLACE_FORMS = {
     "чугуева": "чугуев",
     "чугуєва": "чугуїв",
     "богодухова": "богодухов",
-    "золочева": "золочев",
     "золочева": "золочев",
     "балаклею": "балаклея",
     "балаклію": "балаклія",
@@ -103,10 +99,11 @@ def parse_message(
     url: str,
     weight: int = 1,
 ) -> dict[str, Any]:
-    """Parse one public source message into a normalized event/action.
+    """Normalize one public monitoring-channel message.
 
-    Coordinates always come from public settlement/neighbourhood centroids in geodata.py.
-    No target coordinate is inferred between settlements.
+    Mapping is location-first: if a trusted monitoring channel contains a known place,
+    it is shown on the map even when the threat slang/type is unknown. The raw message
+    is preserved, including profanity/slang. Exact target coordinates are never inferred.
     """
     text = re.sub(r"\s+", " ", text).strip()
     if not text or looks_like_noise(text):
@@ -130,10 +127,9 @@ def parse_message(
             "published_at": published_at,
         }
 
-    if kind is None:
-        return {"action": "ignore"}
-
     if not locations:
+        if kind is None:
+            return {"action": "ignore"}
         return {
             "action": "feed_only",
             "event": {
@@ -150,13 +146,14 @@ def parse_message(
             },
         }
 
+    effective_kind = kind or "Невідома загроза"
     target = locations[-1]
     origin = locations[0] if len(locations) > 1 else None
     has_direction = len(locations) > 1 or any(cue in low for cue in DIRECTION_CUES)
 
     event = {
-        "id": _event_id(source_id, post_id, target["label"], kind),
-        "kind": kind,
+        "id": _event_id(source_id, post_id, target["label"], effective_kind),
+        "kind": effective_kind,
         "source_id": source_id,
         "source_name": source_name,
         "post_id": post_id,
@@ -170,5 +167,6 @@ def parse_message(
         "lon": target["lon"],
         "direction_to": target["label"] if has_direction else None,
         "direction_from": origin["label"] if origin and has_direction else None,
+        "unknown_slang": kind is None,
     }
     return {"action": "event", "event": event}
