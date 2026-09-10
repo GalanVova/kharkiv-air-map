@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: kharkiv-air-map
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/status
+    envVars:
+      - key: POLL_SECONDS
+        value: "20"
+      - key: EVENT_TTL_MINUTES
+        value: "20"
+      - key: ALERTS_API_TOKEN
+        sync: false
