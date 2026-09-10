@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from .geodata import find_locations
+from .geodata_safe import find_locations
 
 CLEAR_PATTERNS = (
     "відбій", "отбой", "не фіксується", "не фиксируется", "не відстежується",
@@ -56,6 +56,8 @@ PLACE_FORMS = {
     "золочева": "золочев",
     "балаклею": "балаклея",
     "балаклію": "балаклія",
+    "барвенково": "барвенково",
+    "барвінкове": "барвінкове",
 }
 
 
