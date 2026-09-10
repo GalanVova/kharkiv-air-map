@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      POLL_SECONDS: ${POLL_SECONDS:-20}
+      EVENT_TTL_MINUTES: ${EVENT_TTL_MINUTES:-20}
+      ALERTS_API_TOKEN: ${ALERTS_API_TOKEN:-}
+      USER_AGENT: ${USER_AGENT:-kharkiv-air-map/1.0}
+    ports:
+      - "8000:8000"
