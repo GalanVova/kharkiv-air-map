@@ -16,8 +16,4 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m compileall app
-      - run: python - <<'PY'
-          from app.main import app
-          assert app.title == 'Kharkiv Air Map'
-          print('import ok')
-          PY
+      - run: python -c "from app.main import app; assert app.title == 'Kharkiv Air Map'; print('import ok')"
