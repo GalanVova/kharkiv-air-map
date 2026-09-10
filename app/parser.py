@@ -17,24 +17,57 @@ GLOBAL_CLEAR_PATTERNS = ("відбій", "отбой")
 THREAT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("FPV", ("fpv", "фпв")),
     ("Молнія", ("молнія", "молния", "molniya")),
+    ("Реактивний БПЛА", ("шаболд", "р. шаболд", "р.шаболд", "реактивн")),
     ("Shahed", ("shahed", "шахед", "герань")),
     ("КАБ", ("каб", "керована авіабомба", "упаб")),
     ("Балістика", ("баліст", "баллист")),
     ("РСЗВ", ("рсзв", "рсзо")),
     ("Ракета", ("ракет", "калібр", "калибр", "іскандер", "искандер", "кинджал", "кінджал")),
-    ("БПЛА", ("бпла", "бплa", "дрон", "безпілот", "беспилот", "розвід", "развед")),
+    ("БПЛА", ("бпла", "бплa", "дрон", "безпілот", "беспилот", "розвід", "развед", "ударний", "ударный")),
     ("Авіація", ("авіаці", "авиац", "літак", "самолет", "су-34", "су-35", "міг-31", "миг-31")),
 ]
 
 DIRECTION_CUES = (
     "курс на", "курсом на", "у напрямку", "в напрямку", "в направлении",
     "далі на", "далее на", "рухається на", "движется на", "на місто", "на город",
+    "на ", "над ",
 )
 
 NOISE_PATTERNS = (
     "реклама", "ваканс", "підписуй", "подписывай", "monobank", "приватбанк",
     "підтримати", "поддержать", "розіграш", "розыгрыш",
 )
+
+# Common grammatical forms used by monitoring channels.  The geocoder keeps
+# canonical settlement aliases, while this lightweight normalizer lets phrases
+# such as "на Лозовую" resolve to the public centroid for "Лозовая/Лозова".
+PLACE_FORMS = {
+    "лозовую": "лозовая",
+    "лозовой": "лозовая",
+    "лозової": "лозова",
+    "лозову": "лозова",
+    "дергачей": "дергачи",
+    "дергачів": "дергачі",
+    "печенеги": "печенеги",
+    "печенегах": "печенеги",
+    "печенігах": "печеніги",
+    "изюма": "изюм",
+    "ізюма": "ізюм",
+    "чугуева": "чугуев",
+    "чугуєва": "чугуїв",
+    "богодухова": "богодухов",
+    "золочева": "золочев",
+    "золочева": "золочев",
+    "балаклею": "балаклея",
+    "балаклію": "балаклія",
+}
+
+
+def _normalize_places(text: str) -> str:
+    normalized = text
+    for form, canonical in PLACE_FORMS.items():
+        normalized = re.sub(rf"(?i)(?<![\w’']){re.escape(form)}(?![\w’'])", canonical, normalized)
+    return normalized
 
 
 def classify(text: str) -> str | None:
@@ -80,15 +113,13 @@ def parse_message(
         return {"action": "ignore"}
 
     low = text.lower().replace("ё", "е")
-    locations = find_locations(text)
+    geo_text = _normalize_places(text)
+    locations = find_locations(geo_text)
     clear = is_clear(text)
     kind = classify(text)
 
     if clear:
         global_clear = any(p in low for p in GLOBAL_CLEAR_PATTERNS)
-        # A message such as "не фиксируется" without a place often refers only to
-        # the immediately preceding target. We cannot resolve that safely from a
-        # stateless public feed, so do not erase unrelated markers.
         if not locations and not global_clear:
             return {"action": "ignore"}
         return {
