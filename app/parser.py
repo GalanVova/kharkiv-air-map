@@ -12,6 +12,7 @@ CLEAR_PATTERNS = (
     "не отслеживается", "не спостерігається", "не наблюдается", "впав", "впала",
     "упал", "упала", "збили", "сбили", "приземлили",
 )
+GLOBAL_CLEAR_PATTERNS = ("відбій", "отбой")
 
 THREAT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("FPV", ("fpv", "фпв")),
@@ -78,23 +79,29 @@ def parse_message(
     if not text or looks_like_noise(text):
         return {"action": "ignore"}
 
+    low = text.lower().replace("ё", "е")
     locations = find_locations(text)
     clear = is_clear(text)
     kind = classify(text)
 
     if clear:
+        global_clear = any(p in low for p in GLOBAL_CLEAR_PATTERNS)
+        # A message such as "не фиксируется" without a place often refers only to
+        # the immediately preceding target. We cannot resolve that safely from a
+        # stateless public feed, so do not erase unrelated markers.
+        if not locations and not global_clear:
+            return {"action": "ignore"}
         return {
             "action": "clear",
             "source_id": source_id,
             "locations": [x["label"] for x in locations],
+            "global_clear": global_clear,
             "published_at": published_at,
         }
 
     if kind is None:
         return {"action": "ignore"}
 
-    # We only put a marker on the map when an explicit known public place is present.
-    # Region-wide official warnings can use a coarse Kharkiv centroid in their adapter.
     if not locations:
         return {
             "action": "feed_only",
@@ -114,7 +121,6 @@ def parse_message(
 
     target = locations[-1]
     origin = locations[0] if len(locations) > 1 else None
-    low = text.lower().replace("ё", "е")
     has_direction = len(locations) > 1 or any(cue in low for cue in DIRECTION_CUES)
 
     event = {
