@@ -1,8 +1,33 @@
-const map = L.map('map', {zoomControl: true}).setView([49.9935, 36.2304], 9);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+const mapEl = document.getElementById('map');
+if (!window.L) throw new Error('Leaflet is not available');
+
+mapEl.innerHTML = '';
+const map = L.map('map', {
+  zoomControl: true,
+  preferCanvas: true,
+  attributionControl: true
+}).setView([49.9935, 36.2304], 9);
+
+const primaryTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18,
+  crossOrigin: true,
+  updateWhenIdle: true,
+  keepBuffer: 2,
   attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
+});
+
+let tileErrors = 0;
+primaryTiles.on('tileerror', () => {
+  tileErrors += 1;
+  if (tileErrors === 4) {
+    document.getElementById('last-update').textContent = 'ошибка загрузки подложки';
+    document.getElementById('status-dot').className = 'status-dot err';
+  }
+});
+primaryTiles.addTo(map);
+
+setTimeout(() => map.invalidateSize(true), 150);
+window.addEventListener('resize', () => map.invalidateSize(false));
 
 const markerLayer = L.layerGroup().addTo(map);
 const markerByEvent = new Map();
@@ -95,6 +120,7 @@ function renderSummary(events, ttl) {
 async function loadStatus() {
   try {
     const r = await fetch('/api/status', {cache:'no-store'});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const s = await r.json();
     const box = document.getElementById('sources');
     box.innerHTML = s.sources.map(src => {
@@ -103,7 +129,6 @@ async function loadStatus() {
       return `<a class="source-chip ${bad ? 'bad' : ''}" href="${src.url}" target="_blank" rel="noopener" title="${esc(state)}">${esc(src.name)}</a>`;
     }).join('') + `<span class="source-chip ${s.alerts_in_ua_enabled ? '' : 'bad'}">alerts.in.ua: ${s.alerts_in_ua_enabled ? 'on' : 'token нужен'}</span>`;
     document.getElementById('status-dot').className = 'status-dot ok';
-    if (s.last_poll) document.getElementById('last-update').textContent = `сервер: ${ageText(s.last_poll)} назад`;
   } catch (_) {
     document.getElementById('status-dot').className = 'status-dot err';
   }
@@ -120,7 +145,7 @@ async function loadEvents() {
     renderSummary(latestEvents, data.ttl_minutes);
     document.getElementById('last-update').textContent = `обновлено ${new Date().toLocaleTimeString()}`;
     document.getElementById('status-dot').className = 'status-dot ok';
-  } catch (e) {
+  } catch (_) {
     document.getElementById('last-update').textContent = 'ошибка обновления';
     document.getElementById('status-dot').className = 'status-dot err';
   }
@@ -132,7 +157,7 @@ async function forceRefresh() {
   btn.textContent = '…';
   try {
     await fetch('/api/refresh', {method:'POST'});
-    await Promise.all([loadEvents(), loadStatus()]);
+    await Promise.allSettled([loadEvents(), loadStatus()]);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Обновить';
@@ -140,6 +165,7 @@ async function forceRefresh() {
 }
 
 document.getElementById('refresh-btn').addEventListener('click', forceRefresh);
-Promise.all([loadEvents(), loadStatus()]);
-setInterval(loadEvents, 15000);
-setInterval(loadStatus, 30000);
+loadEvents();
+setTimeout(loadStatus, 300);
+setInterval(loadEvents, 20000);
+setInterval(loadStatus, 60000);
