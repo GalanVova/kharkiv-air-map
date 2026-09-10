@@ -39,25 +39,10 @@ NOISE_PATTERNS = (
 )
 
 PLACE_FORMS = {
-    "лозовую": "лозовая",
-    "лозовой": "лозовая",
-    "лозової": "лозова",
-    "лозову": "лозова",
-    "дергачей": "дергачи",
-    "дергачів": "дергачі",
-    "печенеги": "печенеги",
-    "печенегах": "печенеги",
-    "печенігах": "печеніги",
-    "изюма": "изюм",
-    "ізюма": "ізюм",
-    "чугуева": "чугуев",
-    "чугуєва": "чугуїв",
-    "богодухова": "богодухов",
-    "золочева": "золочев",
-    "балаклею": "балаклея",
-    "балаклію": "балаклія",
-    "барвенково": "барвенково",
-    "барвінкове": "барвінкове",
+    "лозовую": "лозовая", "лозовой": "лозовая", "лозової": "лозова", "лозову": "лозова",
+    "дергачей": "дергачи", "дергачів": "дергачі", "печенегах": "печенеги", "печенігах": "печеніги",
+    "изюма": "изюм", "ізюма": "ізюм", "чугуева": "чугуев", "чугуєва": "чугуїв",
+    "богодухова": "богодухов", "золочева": "золочев", "балаклею": "балаклея", "балаклію": "балаклія",
 }
 
 
@@ -91,21 +76,14 @@ def _event_id(source_id: str, post_id: str, location: str, kind: str) -> str:
     return hashlib.sha1(raw).hexdigest()[:16]
 
 
-def parse_message(
-    *,
-    source_id: str,
-    source_name: str,
-    post_id: str,
-    text: str,
-    published_at: datetime,
-    url: str,
-    weight: int = 1,
-) -> dict[str, Any]:
-    """Normalize one public monitoring-channel message.
+def parse_message(*, source_id: str, source_name: str, post_id: str, text: str,
+                  published_at: datetime, url: str, weight: int = 1,
+                  location_first: bool = False) -> dict[str, Any]:
+    """Normalize one public source message.
 
-    Mapping is location-first: if a trusted monitoring channel contains a known place,
-    it is shown on the map even when the threat slang/type is unknown. The raw message
-    is preserved, including profanity/slang. Exact target coordinates are never inferred.
+    For dedicated monitoring channels, a known place is enough to show a point even if
+    the slang is unknown. For general news channels, a recognized threat term is required,
+    preventing ordinary news posts from becoming false threat points.
     """
     text = re.sub(r"\s+", " ", text).strip()
     if not text or looks_like_noise(text):
@@ -121,32 +99,21 @@ def parse_message(
         global_clear = any(p in low for p in GLOBAL_CLEAR_PATTERNS)
         if not locations and not global_clear:
             return {"action": "ignore"}
-        return {
-            "action": "clear",
-            "source_id": source_id,
-            "locations": [x["label"] for x in locations],
-            "global_clear": global_clear,
-            "published_at": published_at,
-        }
+        return {"action": "clear", "source_id": source_id,
+                "locations": [x["label"] for x in locations],
+                "global_clear": global_clear, "published_at": published_at}
 
     if not locations:
         if kind is None:
             return {"action": "ignore"}
-        return {
-            "action": "feed_only",
-            "event": {
-                "id": _event_id(source_id, post_id, "feed", kind),
-                "kind": kind,
-                "source_id": source_id,
-                "source_name": source_name,
-                "post_id": post_id,
-                "text": text,
-                "published_at": published_at.isoformat(),
-                "url": url,
-                "weight": weight,
-                "mapped": False,
-            },
-        }
+        return {"action": "feed_only", "event": {
+            "id": _event_id(source_id, post_id, "feed", kind), "kind": kind,
+            "source_id": source_id, "source_name": source_name, "post_id": post_id,
+            "text": text, "published_at": published_at.isoformat(), "url": url,
+            "weight": weight, "mapped": False}}
+
+    if kind is None and not location_first:
+        return {"action": "ignore"}
 
     effective_kind = kind or "Невідома загроза"
     target = locations[-1]
@@ -155,18 +122,10 @@ def parse_message(
 
     event = {
         "id": _event_id(source_id, post_id, target["label"], effective_kind),
-        "kind": effective_kind,
-        "source_id": source_id,
-        "source_name": source_name,
-        "post_id": post_id,
-        "text": text,
-        "published_at": published_at.isoformat(),
-        "url": url,
-        "weight": weight,
-        "mapped": True,
-        "location": target["label"],
-        "lat": target["lat"],
-        "lon": target["lon"],
+        "kind": effective_kind, "source_id": source_id, "source_name": source_name,
+        "post_id": post_id, "text": text, "published_at": published_at.isoformat(),
+        "url": url, "weight": weight, "mapped": True, "location": target["label"],
+        "lat": target["lat"], "lon": target["lon"],
         "direction_to": target["label"] if has_direction else None,
         "direction_from": origin["label"] if origin and has_direction else None,
         "unknown_slang": kind is None,
